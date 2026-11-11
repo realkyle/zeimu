@@ -1,0 +1,38 @@
+[project]
+name = "zeimu"
+version = "0.1.0"
+description = "English-first, citation-backed answers about Japanese inheritance and gift tax from official NTA sources"
+authors = [
+    { name = "realkyle", email = "60832424+realkyle@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.7.0",
+    "pyrefly>=1.4.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import order, B bugbear, UP pyupgrade,
+# SIM simplify, RUF ruff-specific, N naming, PT pytest style
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "PT"]
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+preset = "strict"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
