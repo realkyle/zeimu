@@ -6,7 +6,14 @@ authors = [
     { name = "realkyle", email = "60832424+realkyle@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.14.3",
+    "selectolax>=1.0.2",
+]
+
+[project.scripts]
+zeimu = "zeimu.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
@@ -31,6 +38,8 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "PT"]
 
 [tool.pyrefly]
 project-includes = ["src", "tests"]
+# "." lets test modules import shared helpers from the tests package.
+search-path = ["src", "."]
 preset = "strict"
 
 [tool.pytest.ini_options]
