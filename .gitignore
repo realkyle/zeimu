@@ -1,0 +1,20 @@
+.env
+.env*.local
+.claude/settings.local.json
+CLAUDE.md
+PLAN.md
+addon.md
+docs/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.pyrefly/
+dist/
+build/
+
+# OS
+.DS_Store
