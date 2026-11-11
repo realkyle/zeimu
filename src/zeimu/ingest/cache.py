@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -60,6 +61,14 @@ class RawPageCache:
             return None
         meta = PageMeta.model_validate_json(meta_path.read_text(encoding="utf-8"))
         return FetchedPage(meta=meta, body=body_path.read_bytes(), from_cache=True)
+
+    def iter_pages(self) -> Iterator[FetchedPage]:
+        """Yield every cached page that has metadata, in a stable (sorted path) order."""
+        for meta_path in sorted(self._root.rglob(f"*{self.META_SUFFIX}")):
+            body_path = meta_path.with_name(meta_path.name.removesuffix(self.META_SUFFIX))
+            if body_path.is_file():
+                meta = PageMeta.model_validate_json(meta_path.read_text(encoding="utf-8"))
+                yield FetchedPage(meta=meta, body=body_path.read_bytes(), from_cache=True)
 
     def put(self, url: str, *, status: int, fetched_at: datetime, body: bytes) -> FetchedPage:
         """Store ``body`` for ``url`` and return it as a (non-cached) ``FetchedPage``."""

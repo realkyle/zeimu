@@ -8,6 +8,9 @@ repos:
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=500"]
+        # The processed corpus is committed on purpose (~600 KB of text); the guard still
+        # applies to every other file.
+        exclude: ^data/chunks\.jsonl$
       - id: check-merge-conflict
       - id: detect-private-key
   - repo: https://github.com/astral-sh/ruff-pre-commit

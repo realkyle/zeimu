@@ -29,8 +29,8 @@ flowchart LR
 
     classDef built fill:#d1fae5,stroke:#059669,color:#064e3b
     classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:4 3,color:#374151
-    class F built
-    class C,R,A,T,V planned
+    class F,C built
+    class R,A,T,V planned
 ```
 
 <sub>Green: built. Grey, dashed: designed, in progress.</sub>
@@ -59,6 +59,8 @@ Results will be published here once they have been measured.
 ## Engineering highlights so far
 
 - **A polite, testable crawler.** It fetches only from an allowlisted host, obeys robots.txt (including `Crawl-delay`), spaces requests at least 1.5 s apart, identifies itself honestly, and caches every page with its fetch date and checksum. It deliberately doesn't follow redirects: the site answers missing pages with a redirect to an error page, which must never be stored as tax content. It collected 137 pages with zero failures, and later runs make no network requests.
+- **A cleaner that doesn't lose the hard parts.** It detects each page's encoding (main pages are UTF-8, Q&A pages Shift_JIS), keeps formula images as their `alt` text, flattens tables so each row keeps its column headers, and drops navigation and contact boilerplate. Each page's law-as-of date (e.g. 令和8年4月1日 → 2026-04-01) and legal basis travel with every chunk.
+- **Citable, stable chunks.** 137 pages become 286 chunks, one per section, with long sections split at sub-headings. Source wording is stored unchanged so it can be quoted exactly. Chunk IDs come from the heading path, not position, so a section added by the NTA doesn't change the IDs that hand-labelled evaluation cases point to. Rebuilding produces a byte-identical file, and CI checks the committed corpus.
 - **Fast, offline tests.** The HTTP client, clock and sleep function are injected, so rate-limiting behaviour is tested exactly, with no network and no waiting.
 - **Defensive file handling.** URLs are validated before they become cache paths, so a crafted link can't write outside the cache folder.
 - **Strict quality gates.** ruff, Pyrefly in strict mode and pytest run before every commit and on every pull request. CI installs from the lock file and pins third-party GitHub Actions to commit SHAs.
@@ -76,6 +78,7 @@ Requires [uv](https://docs.astral.sh/uv/); it installs Python 3.12 automatically
 uv sync                    # install dependencies
 uv run pytest              # run the tests
 uv run zeimu fetch         # download the NTA Tax Answer pages into data/raw/ (cached)
+uv run zeimu chunk         # clean and split them into data/chunks.jsonl
 ```
 
 ## Sources and attribution
@@ -84,4 +87,4 @@ The corpus is built from the National Tax Agency's Tax Answer (タックスア�
 
 > 国税庁「タックスアンサー」(https://www.nta.go.jp/taxes/shiraberu/taxanswer/) を加工して作成
 
-Each answer links to the specific Tax Answer page it cites. No real personal data is used anywhere in this project; all examples and test cases use made-up people and amounts.
+`data/chunks.jsonl` is processed content from these pages. Each answer links to the specific Tax Answer page it cites. No real personal data is used anywhere in this project; all examples and test cases use made-up people and amounts.

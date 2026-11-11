@@ -10,6 +10,8 @@ from pathlib import Path
 import httpx
 
 from zeimu.ingest.cache import RawPageCache
+from zeimu.ingest.chunker import DEFAULT_MAX_CHARS
+from zeimu.ingest.corpus import build_chunks, write_jsonl
 from zeimu.ingest.discover import (
     CODE_INDEX_URL,
     CORPUS_CATEGORIES,
@@ -20,6 +22,7 @@ from zeimu.ingest.fetcher import FetchError, PoliteFetcher
 
 USER_AGENT = "zeimu/0.1 (+https://github.com/realkyle/zeimu)"
 DEFAULT_RAW_DIR = Path("data/raw")
+DEFAULT_CHUNKS_PATH = Path("data/chunks.jsonl")
 
 logger = logging.getLogger("zeimu")
 
@@ -79,6 +82,25 @@ def fetch_corpus(fetcher: PoliteFetcher, *, refresh: bool) -> tuple[int, list[st
     return ok, failed
 
 
+def chunk_corpus(raw_dir: Path, out: Path, max_chars: int) -> int:
+    """Clean and chunk every cached page into ``out``. Returns the number of warnings."""
+    chunks, report = build_chunks(RawPageCache(raw_dir).iter_pages(), max_chars=max_chars)
+    write_jsonl(chunks, out)
+    for warning in report.warnings:
+        logger.warning(warning)
+    sizes = sorted(len(chunk.text) for chunk in chunks)
+    logger.info(
+        "%d pages -> %d chunks in %s (chars: median %d, max %d), %d warnings",
+        report.pages,
+        report.chunks,
+        out,
+        sizes[len(sizes) // 2] if sizes else 0,
+        sizes[-1] if sizes else 0,
+        len(report.warnings),
+    )
+    return len(report.warnings)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse arguments and run the chosen command. Returns the process exit code."""
     parser = argparse.ArgumentParser(prog="zeimu")
@@ -87,9 +109,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     fetch.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     fetch.add_argument("--min-interval", type=float, default=1.5, help="seconds between requests")
     fetch.add_argument("--refresh", action="store_true", help="re-fetch pages already cached")
+    chunk = commands.add_parser("chunk", help="clean and chunk cached pages into JSONL")
+    chunk.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
+    chunk.add_argument("--out", type=Path, default=DEFAULT_CHUNKS_PATH)
+    chunk.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS)
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if args.command == "chunk":
+        return 1 if chunk_corpus(args.raw_dir, args.out, args.max_chars) else 0
+
     logging.getLogger("httpx").setLevel(logging.WARNING)  # our fetcher already logs each GET
     with httpx.Client(timeout=30.0) as client:
         fetcher = build_fetcher(client, args.raw_dir, args.min_interval)
