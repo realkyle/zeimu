@@ -35,6 +35,12 @@ target-version = "py312"
 # E/W pycodestyle, F pyflakes, I import order, B bugbear, UP pyupgrade,
 # SIM simplify, RUF ruff-specific, N naming, PT pytest style
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "PT"]
+# Full-width Japanese punctuation is correct in this project, not a look-alike typo.
+allowed-confusables = ["（", "）", "：", "；", "！", "？", "，", "＋", "－", "×", "＝", "～", "％", "Ｑ", "Ａ", "　"]
+
+[tool.ruff.lint.per-file-ignores]
+# HTML fixtures mirror real page markup, whose lines are long.
+"tests/ingest/sample_pages.py" = ["E501"]
 
 [tool.pyrefly]
 project-includes = ["src", "tests"]
