@@ -1,48 +1,87 @@
 # zeimu (税務)
 
-An English-first assistant for **Japanese inheritance and gift tax** (相続税・贈与税) that answers from official National Tax Agency (国税庁) sources.
+**Ask about Japanese inheritance and gift tax in English, get answers grounded in the official Japanese sources, with every claim cited and every number calculated by code.**
 
-> **Not tax advice.** zeimu is a personal engineering project. Its answers may be wrong or out of date. Consult a licensed tax accountant (税理士) before making any decision.
+> **Not tax advice.** zeimu is an engineering project. Its answers may be wrong or out of date. Consult a licensed tax accountant (税理士) before making any decision.
 
-## Goal
+## Why this is hard
 
-Answer questions in English or Japanese with:
+Japan's National Tax Agency (国税庁) publishes clear guidance on inheritance tax (相続税) and gift tax (贈与税), but only in Japanese. An English speaker dealing with an estate in Japan needs to know what applies, how much tax is owed, and where it says so. A general-purpose chatbot is a poor fit:
 
-- **Citations** to the exact source section for every claim
-- **Exact calculations** from a deterministic calculator tool; the language model never does arithmetic
-- **Refusals** when the sources don't support an answer
-- **A measured, harm-weighted evaluation** of how often it is right, cites correctly and refuses correctly
+- **A confident wrong answer costs real money.** Tax is computed in steps (statutory shares, a progressive rate table, then allocation by what each heir actually received). An LLM doing that arithmetic in its head will sometimes get it wrong without saying so.
+- **The rules depend on the date.** For example, the window for adding lifetime gifts back into an estate is moving from 3 to 7 years, with transitional rules. An answer has to use the rule in force for the date in question.
+- **The question and the source are in different languages.** An English question has to find Japanese legal text, and English answers must keep the Japanese legal term visible instead of inventing a translation.
+- **The source pages hide key content.** On the NTA pages, core formulas are images whose text only appears in the HTML `alt` attribute. A standard HTML-to-text pipeline silently drops them.
 
-## Status
+## How it works
 
-| Phase | Scope | Status |
-|---|---|---|
-| 0 | Scaffold: uv, ruff, Pyrefly, pytest, pre-commit, CI | In progress |
-| 1 | Corpus and hybrid retrieval (BM25 + embeddings) | Not started |
-| 2 | Cited answers, citation verification, refusals | Not started |
-| 3 | Calculator tool and agent loop | Not started |
-| 4 | Robustness: prompt injection, EN/JA consistency, date-dependent rules | Not started |
-| 5 | API, web UI, deployment, CI evaluation gate | Not started |
+```mermaid
+flowchart LR
+    Q[/"Question (EN or JA)"/] --> R
+    subgraph Corpus
+        F["Polite fetcher<br/>robots.txt · rate limit · cache"] --> C["Cleaner + chunker<br/>keeps image alt text, law-as-of date"]
+    end
+    C --> R["Hybrid retrieval<br/>BM25 (Japanese tokenizer) + multilingual embeddings"]
+    R --> A["Agent<br/>decides whether to call the calculator"]
+    A <--> T["Tax calculator<br/>deterministic, integer yen"]
+    A --> V["Citation verifier<br/>every cited section must support the claim"]
+    V --> O[/"Answer with citations,<br/>or a refusal"/]
 
-No evaluation results yet. Numbers will appear here only once they have been measured.
+    classDef built fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:4 3,color:#374151
+    class F built
+    class C,R,A,T,V planned
+```
 
-## Development
+<sub>Green: built. Grey, dashed: designed, in progress.</sub>
 
-Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed by uv automatically.
+### Design principles
+
+zeimu is under active development. These are the rules each component is designed and tested against as it's built.
+
+- **The model never does arithmetic.** Any number in an answer comes from the calculator or is quoted from a cited source. The calculator implements only rules stated on NTA pages and is tested against the NTA's own worked examples, plus property-based tests (tax never falls as the estate grows; heirs' shares sum to the total).
+- **Cite, verify, or refuse.** Every claim cites a specific source section. A verifier checks that each citation exists, was actually retrieved for this question and supports the claim. An answer that fails is retried once, then refused.
+- **Dates are first-class.** Every chunk carries the date its source law was current and when it was fetched, so date-dependent rules can be applied and checked.
+- **Retrieved text is data, never instructions.** Prompt-injection defense is tested both through user questions and through a planted document in the corpus.
+- **Japanese terms stay visible.** English answers show the Japanese legal term in parentheses, e.g. spouse tax reduction (配偶者の税額軽減).
+
+## Evaluation
+
+Accuracy is measured, not assumed. The evaluation set is designed to cover rule lookups, exact-yen calculations, English questions answered from Japanese-only sources, the same question asked in English and Japanese (the answers must agree), date-dependent rules, questions that must be refused, and prompt-injection attempts.
+
+- **Harm-weighted critical errors** are reported separately, with a target of zero: a wrong number stated confidently, an outdated rule applied, answering when it should have refused, or a citation that doesn't support its claim.
+- **Retrieval** is scored with recall@5 and MRR for BM25 alone, embeddings alone and the hybrid, so the value of each part is shown, not claimed.
+- **Gold answers are written and checked by hand** against the source pages, never generated by an LLM. A held-out set is written before any tuning and used only for final reports.
+- **Runs are reproducible:** temperature 0, at least 3 runs with the spread reported, and model and embedding versions recorded with every result.
+
+Results will be published here once they have been measured.
+
+## Engineering highlights so far
+
+- **A polite, testable crawler.** It fetches only from an allowlisted host, obeys robots.txt (including `Crawl-delay`), spaces requests at least 1.5 s apart, identifies itself honestly, and caches every page with its fetch date and checksum. It deliberately doesn't follow redirects: the site answers missing pages with a redirect to an error page, which must never be stored as tax content. It collected 137 pages with zero failures, and later runs make no network requests.
+- **Fast, offline tests.** The HTTP client, clock and sleep function are injected, so rate-limiting behaviour is tested exactly, with no network and no waiting.
+- **Defensive file handling.** URLs are validated before they become cache paths, so a crafted link can't write outside the cache folder.
+- **Strict quality gates.** ruff, Pyrefly in strict mode and pytest run before every commit and on every pull request. CI installs from the lock file and pins third-party GitHub Actions to commit SHAs.
+
+## Tech stack
+
+- **In use:** Python 3.12 · uv · httpx · selectolax · Pydantic · pytest · ruff · Pyrefly · pre-commit · GitHub Actions
+- **Planned:** SudachiPy + BM25 · bge-m3 embeddings · NumPy vector search · Hypothesis · FastAPI
+
+## Running locally
+
+Requires [uv](https://docs.astral.sh/uv/); it installs Python 3.12 automatically.
 
 ```bash
-uv sync                          # install dependencies
-uv run pre-commit install        # run checks on every commit
-uv run pytest                    # tests
-uv run ruff check . && uv run ruff format --check .   # lint and format
-uv run pyrefly check             # type check
-uv run zeimu fetch               # fetch NTA Tax Answer pages into data/raw/ (cached)
+uv sync                    # install dependencies
+uv run pytest              # run the tests
+uv run zeimu fetch         # download the NTA Tax Answer pages into data/raw/ (cached)
 ```
 
 ## Sources and attribution
 
-The corpus is built from the National Tax Agency's Tax Answer (タックスアンサー) pages, which may be reused under the Japanese government standard terms of use with attribution. zeimu **processes** this content (it splits, indexes, translates and summarizes it), so it is not the government's own wording:
+The corpus is built from the National Tax Agency's Tax Answer (タックスアンサー) pages on inheritance tax, gift tax and property valuation, reused under the Japanese government standard terms of use. zeimu **processes** this content (splitting, indexing, translating and summarizing it), so its output is not the government's own wording:
 
 > 国税庁「タックスアンサー」(https://www.nta.go.jp/taxes/shiraberu/taxanswer/) を加工して作成
 
-Each answer links to the specific Tax Answer page it cites. No real client data is used; all examples and test cases use synthetic people and amounts.
+Each answer links to the specific Tax Answer page it cites. No real personal data is used anywhere in this project; all examples and test cases use made-up people and amounts.
