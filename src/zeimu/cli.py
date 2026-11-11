@@ -9,9 +9,11 @@ from pathlib import Path
 
 import httpx
 
+from zeimu.index.retriever import BM25Retriever
+from zeimu.index.tokenizer import SudachiTokenizer
 from zeimu.ingest.cache import RawPageCache
 from zeimu.ingest.chunker import DEFAULT_MAX_CHARS
-from zeimu.ingest.corpus import build_chunks, write_jsonl
+from zeimu.ingest.corpus import build_chunks, read_jsonl, write_jsonl
 from zeimu.ingest.discover import (
     CODE_INDEX_URL,
     CORPUS_CATEGORIES,
@@ -101,6 +103,19 @@ def chunk_corpus(raw_dir: Path, out: Path, max_chars: int) -> int:
     return len(report.warnings)
 
 
+def search_corpus(chunks_path: Path, query: str, k: int) -> list[str]:
+    """Run a BM25 search and return printable result lines (rank, score, ID, heading)."""
+    chunks = read_jsonl(chunks_path)
+    by_id = {chunk.id: chunk for chunk in chunks}
+    retriever = BM25Retriever(chunks, SudachiTokenizer())
+    lines: list[str] = []
+    for hit in retriever.search(query, k=k):
+        chunk = by_id[hit.chunk_id]
+        heading = " > ".join((chunk.title, *chunk.heading_path))
+        lines.append(f"{hit.rank:>2}. {hit.score:6.2f}  {hit.chunk_id:<22} {heading}")
+    return lines or ["(no matches)"]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse arguments and run the chosen command. Returns the process exit code."""
     parser = argparse.ArgumentParser(prog="zeimu")
@@ -113,7 +128,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     chunk.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     chunk.add_argument("--out", type=Path, default=DEFAULT_CHUNKS_PATH)
     chunk.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS)
+    search = commands.add_parser("search", help="keyword (BM25) search over the chunks")
+    search.add_argument("query")
+    search.add_argument("-k", type=int, default=5, help="number of results")
+    search.add_argument("--chunks", type=Path, default=DEFAULT_CHUNKS_PATH)
     args = parser.parse_args(argv)
+
+    if args.command == "search":
+        print("\n".join(search_corpus(args.chunks, args.query, args.k)))
+        return 0
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if args.command == "chunk":

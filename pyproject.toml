@@ -8,8 +8,11 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
+    "numpy>=2.5.4",
     "pydantic>=2.14.3",
     "selectolax>=1.0.2",
+    "sudachidict-core>=20261015",
+    "sudachipy>=0.7.0",
 ]
 
 [project.scripts]
@@ -41,6 +44,8 @@ allowed-confusables = ["（", "）", "：", "；", "！", "？", "，", "＋", "
 [tool.ruff.lint.per-file-ignores]
 # HTML fixtures mirror real page markup, whose lines are long.
 "tests/ingest/sample_pages.py" = ["E501"]
+# Tests feed full-width input (３,０００万円, Ｑ1) on purpose; src/ stays strict.
+"tests/**" = ["RUF001", "RUF003"]
 
 [tool.pyrefly]
 project-includes = ["src", "tests"]
