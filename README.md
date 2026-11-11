@@ -36,6 +36,7 @@ uv run pre-commit install        # run checks on every commit
 uv run pytest                    # tests
 uv run ruff check . && uv run ruff format --check .   # lint and format
 uv run pyrefly check             # type check
+uv run zeimu fetch               # fetch NTA Tax Answer pages into data/raw/ (cached)
 ```
 
 ## Sources and attribution
