@@ -11,8 +11,10 @@ dependencies = [
     "numpy>=2.5.4",
     "pydantic>=2.14.3",
     "selectolax>=1.0.2",
+    "sentence-transformers>=6.3.0",
     "sudachidict-core>=20261015",
     "sudachipy>=0.7.0",
+    "torch>=2.15.0",
 ]
 
 [project.scripts]
@@ -55,4 +57,17 @@ preset = "strict"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+# Tests that load the real 2.2 GB bge-m3 model are skipped by default and in CI;
+# run them locally with `uv run pytest -m model`.
+addopts = "-ra --strict-markers -m 'not model'"
+markers = ["model: loads the real embedding model (slow; downloads ~2.2 GB on first run)"]
+
+# CI (Linux) gets the CPU-only PyTorch wheel instead of the multi-GB CUDA build; macOS
+# wheels on PyPI are already CPU/MPS-only, so they come from PyPI as usual.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

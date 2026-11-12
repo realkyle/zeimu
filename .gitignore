@@ -21,3 +21,6 @@ build/
 
 # Fetched NTA HTML (re-creatable with `uv run zeimu fetch`)
 data/raw/
+
+# Chunk vectors (re-creatable with `uv run zeimu embed`; meta.json says which model/chunks)
+data/embeddings/

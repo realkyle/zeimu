@@ -9,8 +9,10 @@ from pathlib import Path
 
 import httpx
 
-from zeimu.index.retriever import BM25Retriever
+from zeimu.index.embedder import Embedder, SentenceTransformerEmbedder
+from zeimu.index.retriever import BM25Retriever, EmbeddingRetriever, Retriever
 from zeimu.index.tokenizer import SudachiTokenizer
+from zeimu.index.vector_cache import StaleCacheError, VectorCache
 from zeimu.ingest.cache import RawPageCache
 from zeimu.ingest.chunker import DEFAULT_MAX_CHARS
 from zeimu.ingest.corpus import build_chunks, read_jsonl, write_jsonl
@@ -25,6 +27,7 @@ from zeimu.ingest.fetcher import FetchError, PoliteFetcher
 USER_AGENT = "zeimu/0.1 (+https://github.com/realkyle/zeimu)"
 DEFAULT_RAW_DIR = Path("data/raw")
 DEFAULT_CHUNKS_PATH = Path("data/chunks.jsonl")
+DEFAULT_EMBEDDINGS_DIR = Path("data/embeddings")
 
 logger = logging.getLogger("zeimu")
 
@@ -103,11 +106,38 @@ def chunk_corpus(raw_dir: Path, out: Path, max_chars: int) -> int:
     return len(report.warnings)
 
 
-def search_corpus(chunks_path: Path, query: str, k: int) -> list[str]:
-    """Run a BM25 search and return printable result lines (rank, score, ID, heading)."""
+def embed_corpus(chunks_path: Path, cache_dir: Path, embedder: Embedder) -> int:
+    """Embed every chunk and save the vectors to ``cache_dir``. Returns the chunk count."""
+    chunks = read_jsonl(chunks_path)
+    EmbeddingRetriever.build(chunks, embedder, VectorCache(cache_dir))
+    logger.info("%d chunks embedded with %s -> %s", len(chunks), embedder.model_id, cache_dir)
+    return len(chunks)
+
+
+def search_corpus(
+    chunks_path: Path,
+    query: str,
+    k: int,
+    *,
+    method: str = "bm25",
+    cache_dir: Path = DEFAULT_EMBEDDINGS_DIR,
+    embedder: Embedder | None = None,
+) -> list[str]:
+    """Search by ``method`` ("bm25" or "embed"); return lines of rank, score, ID, heading.
+
+    Embedding search reads vectors saved by ``zeimu embed``; a missing or stale cache raises
+    ``FileNotFoundError`` / ``StaleCacheError`` rather than silently re-embedding.
+    """
     chunks = read_jsonl(chunks_path)
     by_id = {chunk.id: chunk for chunk in chunks}
-    retriever = BM25Retriever(chunks, SudachiTokenizer())
+    retriever: Retriever
+    if method == "bm25":
+        retriever = BM25Retriever(chunks, SudachiTokenizer())
+    elif method == "embed":
+        model = embedder if embedder is not None else SentenceTransformerEmbedder()
+        retriever = EmbeddingRetriever.from_cache(chunks, model, VectorCache(cache_dir))
+    else:
+        raise ValueError(f"unknown search method {method!r}")
     lines: list[str] = []
     for hit in retriever.search(query, k=k):
         chunk = by_id[hit.chunk_id]
@@ -128,21 +158,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     chunk.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     chunk.add_argument("--out", type=Path, default=DEFAULT_CHUNKS_PATH)
     chunk.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS)
-    search = commands.add_parser("search", help="keyword (BM25) search over the chunks")
+    embed = commands.add_parser("embed", help="embed the chunks with bge-m3 into a vector cache")
+    embed.add_argument("--chunks", type=Path, default=DEFAULT_CHUNKS_PATH)
+    embed.add_argument("--out", type=Path, default=DEFAULT_EMBEDDINGS_DIR)
+    search = commands.add_parser("search", help="search the chunks (BM25 or embeddings)")
     search.add_argument("query")
     search.add_argument("-k", type=int, default=5, help="number of results")
     search.add_argument("--chunks", type=Path, default=DEFAULT_CHUNKS_PATH)
+    search.add_argument("--method", choices=("bm25", "embed"), default="bm25")
+    search.add_argument("--embeddings", type=Path, default=DEFAULT_EMBEDDINGS_DIR)
     args = parser.parse_args(argv)
 
     if args.command == "search":
-        print("\n".join(search_corpus(args.chunks, args.query, args.k)))
+        try:
+            lines = search_corpus(
+                args.chunks, args.query, args.k, method=args.method, cache_dir=args.embeddings
+            )
+        except (FileNotFoundError, StaleCacheError) as error:
+            print(f"zeimu: {error}. Run `zeimu embed` to (re)build the vector cache.")
+            return 1
+        print("\n".join(lines))
         return 0
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    # Per-request INFO lines: our fetcher already logs each GET, and model downloads are noise.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.command == "embed":
+        embed_corpus(args.chunks, args.out, SentenceTransformerEmbedder())
+        return 0
     if args.command == "chunk":
         return 1 if chunk_corpus(args.raw_dir, args.out, args.max_chars) else 0
 
-    logging.getLogger("httpx").setLevel(logging.WARNING)  # our fetcher already logs each GET
     with httpx.Client(timeout=30.0) as client:
         fetcher = build_fetcher(client, args.raw_dir, args.min_interval)
         _, failed = fetch_corpus(fetcher, refresh=args.refresh)

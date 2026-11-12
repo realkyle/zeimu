@@ -71,8 +71,8 @@ Results will be published here once they have been measured.
 
 ## Tech stack
 
-- **In use:** Python 3.12 · uv · httpx · selectolax · Pydantic · SudachiPy · NumPy (BM25) · pytest · ruff · Pyrefly · pre-commit · GitHub Actions
-- **Planned:** bge-m3 embeddings · NumPy vector search · Hypothesis · FastAPI
+- **In use:** Python 3.12 · uv · httpx · selectolax · Pydantic · SudachiPy · NumPy (BM25, vector search) · bge-m3 embeddings via sentence-transformers · pytest · ruff · Pyrefly · pre-commit · GitHub Actions
+- **Planned:** Hypothesis · FastAPI
 
 ## Running locally
 
@@ -84,6 +84,8 @@ uv run pytest              # run the tests
 uv run zeimu fetch         # download the NTA Tax Answer pages into data/raw/ (cached)
 uv run zeimu chunk         # clean and split them into data/chunks.jsonl
 uv run zeimu search "配偶者の税額軽減"   # keyword search over the chunks
+uv run zeimu embed        # embed the chunks with bge-m3 (downloads ~2.2 GB once; ~2 min on CPU)
+uv run zeimu search "spouse tax reduction" --method embed   # semantic search, works in English
 ```
 
 ## Sources and attribution
