@@ -166,6 +166,16 @@ def test_cli_exit_codes_follow_the_hook_protocol(root: Path) -> None:
     assert allowed.stderr == ""
 
 
+def test_settings_register_hook_and_deny_env_access() -> None:
+    settings = json.loads((HOOK_PATH.parents[1] / "settings.json").read_text())
+    deny = settings["permissions"]["deny"]
+    for rule in ("Read(./.env)", "Read(./.env.*)", "Edit(./.env)", "Edit(./.env.*)"):
+        assert rule in deny
+    (entry,) = settings["hooks"]["PreToolUse"]
+    assert "protect_data.py" in entry["hooks"][0]["command"]
+    assert set(entry["matcher"].split("|")) >= {"Bash", "Write", "Edit"}
+
+
 def test_cli_unreadable_input_does_not_block(root: Path) -> None:
     result = _run_hook(root, "not json")
     assert result.returncode == 1  # non-blocking error: tool calls keep working
