@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from zeimu.index.embedder import Embedder, SentenceTransformerEmbedder
+from zeimu.index.fusion import HybridRetriever
 from zeimu.index.retriever import BM25Retriever, EmbeddingRetriever, Retriever
 from zeimu.index.tokenizer import SudachiTokenizer
 from zeimu.index.vector_cache import StaleCacheError, VectorCache
@@ -123,26 +124,31 @@ def search_corpus(
     cache_dir: Path = DEFAULT_EMBEDDINGS_DIR,
     embedder: Embedder | None = None,
 ) -> list[str]:
-    """Search by ``method`` ("bm25" or "embed"); return lines of rank, score, ID, heading.
+    """Search by ``method`` ("bm25", "embed" or "hybrid"); return lines of rank, score, ID, heading.
 
-    Embedding search reads vectors saved by ``zeimu embed``; a missing or stale cache raises
-    ``FileNotFoundError`` / ``StaleCacheError`` rather than silently re-embedding.
+    Embedding and hybrid search read vectors saved by ``zeimu embed``; a missing or stale
+    cache raises ``FileNotFoundError`` / ``StaleCacheError`` rather than silently re-embedding.
     """
     chunks = read_jsonl(chunks_path)
     by_id = {chunk.id: chunk for chunk in chunks}
-    retriever: Retriever
-    if method == "bm25":
-        retriever = BM25Retriever(chunks, SudachiTokenizer())
-    elif method == "embed":
-        model = embedder if embedder is not None else SentenceTransformerEmbedder()
-        retriever = EmbeddingRetriever.from_cache(chunks, model, VectorCache(cache_dir))
-    else:
+    if method not in ("bm25", "embed", "hybrid"):
         raise ValueError(f"unknown search method {method!r}")
+    # Load the vector cache first so a missing/stale cache fails before the tokenizer loads;
+    # BM25 still goes first in the list, so it wins exact RRF ties (first-seen order).
+    retrievers: list[Retriever] = []
+    if method in ("embed", "hybrid"):
+        model = embedder if embedder is not None else SentenceTransformerEmbedder()
+        retrievers.append(EmbeddingRetriever.from_cache(chunks, model, VectorCache(cache_dir)))
+    if method in ("bm25", "hybrid"):
+        retrievers.insert(0, BM25Retriever(chunks, SudachiTokenizer()))
+    retriever = retrievers[0] if len(retrievers) == 1 else HybridRetriever(retrievers)
+    # RRF sums are small (at most 2/61 ≈ 0.033), so they need more decimals to tell apart.
+    decimals = 4 if method == "hybrid" else 2
     lines: list[str] = []
     for hit in retriever.search(query, k=k):
         chunk = by_id[hit.chunk_id]
         heading = " > ".join((chunk.title, *chunk.heading_path))
-        lines.append(f"{hit.rank:>2}. {hit.score:6.2f}  {hit.chunk_id:<22} {heading}")
+        lines.append(f"{hit.rank:>2}. {hit.score:6.{decimals}f}  {hit.chunk_id:<22} {heading}")
     return lines or ["(no matches)"]
 
 
@@ -161,11 +167,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     embed = commands.add_parser("embed", help="embed the chunks with bge-m3 into a vector cache")
     embed.add_argument("--chunks", type=Path, default=DEFAULT_CHUNKS_PATH)
     embed.add_argument("--out", type=Path, default=DEFAULT_EMBEDDINGS_DIR)
-    search = commands.add_parser("search", help="search the chunks (BM25 or embeddings)")
+    search = commands.add_parser("search", help="search the chunks (BM25, embeddings or hybrid)")
     search.add_argument("query")
     search.add_argument("-k", type=int, default=5, help="number of results")
     search.add_argument("--chunks", type=Path, default=DEFAULT_CHUNKS_PATH)
-    search.add_argument("--method", choices=("bm25", "embed"), default="bm25")
+    search.add_argument("--method", choices=("bm25", "embed", "hybrid"), default="bm25")
     search.add_argument("--embeddings", type=Path, default=DEFAULT_EMBEDDINGS_DIR)
     args = parser.parse_args(argv)
 

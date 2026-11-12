@@ -27,7 +27,7 @@ class Hit:
 
 
 class Retriever(Protocol):
-    """Anything that can search the chunks: BM25 now, embeddings and the hybrid later."""
+    """Anything that can search the chunks: BM25, embeddings, or the hybrid of both."""
 
     def search(self, query: str, k: int = 5) -> list[Hit]:
         """Return up to ``k`` hits, best first.
