@@ -34,6 +34,7 @@ _COPIERS = frozenset({"cp", "rsync", "install", "ln", "tee"})
 _FILE_EDIT_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 # Inline scripts (python -c, perl -e, ...) that name a protected path and a destructive call.
 _SCRIPT_DESTROYS = re.compile(r"rmtree|unlink|remove\(|rename|write_text|write_bytes")
+_INTERPRETER = re.compile(r"python[\d.]*|perl|ruby|node|sh|bash|zsh")
 
 
 @dataclass(frozen=True)
@@ -82,8 +83,6 @@ class DataGuard:
     def check_command(self, command: str, cwd: Path) -> Verdict:
         """Block shell commands that delete, move, overwrite or reset protected data."""
         mentions_protected = any(str(d) in command for d in PROTECTED_DIRS)
-        if mentions_protected and _SCRIPT_DESTROYS.search(command):
-            return Verdict("inline script deletes or rewrites a protected path")
         try:
             tokens = _tokenize(command)
         except ValueError:
@@ -109,6 +108,13 @@ class DataGuard:
         if not words:
             return ALLOW, cwd
         program, args = os.path.basename(words[0]), words[1:]
+        if _runs_inline_script(program, args):
+            # Only for interpreters: prose that merely mentions these words (a commit
+            # message, a PR body) must not be blocked.
+            script = " ".join(args)
+            names_protected = any(str(d) in script for d in PROTECTED_DIRS)
+            if names_protected and _SCRIPT_DESTROYS.search(script):
+                return Verdict("inline script deletes or rewrites a protected path"), cwd
         if program == "cd":
             return ALLOW, self._resolve(args[0] if args else str(self._root), cwd)
         if program == "xargs":
@@ -247,6 +253,13 @@ def _strip_wrappers(words: list[str]) -> list[str]:
     ):
         index += 1
     return words[index:]
+
+
+def _runs_inline_script(program: str, args: list[str]) -> bool:
+    """True for interpreters (``python -c``, ``perl -e``, ``bash -c``, ``uv run python``)."""
+    if program == "uv":
+        return any(_INTERPRETER.fullmatch(a) for a in args[:3])
+    return bool(_INTERPRETER.fullmatch(program))
 
 
 def _find_execs_delete(args: list[str]) -> bool:

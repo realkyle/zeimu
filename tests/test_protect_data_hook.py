@@ -72,6 +72,8 @@ BLOCKED_COMMANDS = [
     "uv run zeimu fetch --refresh",
     "zeimu fetch --refresh",
     "python -c \"import shutil; shutil.rmtree('data/raw')\"",
+    "uv run python -c \"from pathlib import Path; Path('eval/data/dev.jsonl').unlink()\"",
+    'bash -c \'python3 -c "import os; os.remove(\\"data/raw/a.html\\")"\'',
     "rm -rf 'data/raw",  # unparseable but names protected data: fail closed
 ]
 
@@ -104,6 +106,10 @@ ALLOWED_COMMANDS = [
     "uv run pytest 2>&1 | tail -5",
     "echo hi > /tmp/out.txt",
     "rm -rf $TMPDIR/x",  # unexpanded variable: unknowable, allowed (documented limitation)
+    # Regression: prose that only *mentions* protected paths and rmtree must pass.
+    'git commit -m "hook blocks rmtree and unlink on data/raw"',
+    "gh pr create --body \"$(cat <<'EOF'\nblocks `rm -rf data/raw` and rmtree\nEOF\n)\"",
+    "python3 -c \"print(open('data/raw/a.html').read()[:100])\"",  # reading is fine
 ]
 
 
