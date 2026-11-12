@@ -86,6 +86,7 @@ uv run zeimu chunk         # clean and split them into data/chunks.jsonl
 uv run zeimu search "配偶者の税額軽減"   # keyword search over the chunks
 uv run zeimu embed        # embed the chunks with bge-m3 (downloads ~2.2 GB once; ~2 min on CPU)
 uv run zeimu search "spouse tax reduction" --method embed   # semantic search, works in English
+uv run zeimu search "配偶者の税額軽減" --method hybrid   # both, merged by reciprocal rank fusion
 ```
 
 ## Sources and attribution
